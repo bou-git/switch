@@ -443,7 +443,14 @@
 
         setTimeout(() => {
             updateBadgeUI();
-            startLogStream(state.mode);
+            
+            // If we are transitioning, we still want to stream the logs of the target environment
+            let logStreamMode = state.mode;
+            if (logStreamMode === 'transitioning') {
+                logStreamMode = state.targetMode === 'development' ? 'dev' : 'prod';
+            }
+            
+            startLogStream(logStreamMode);
         }, 800);
     }
     
@@ -644,8 +651,8 @@
             ui.cp.badge.style.color = '#6b7280';
             ui.cp.badge.style.border = '1px solid rgba(107, 114, 128, 0.2)';
             
-            const targetText = state.targetMode ? ` to ${state.targetMode}` : '';
-            ui.cp.badge.textContent = progressMessage ? `Status: ${progressMessage}` : `Status: Switching${targetText}...`;
+            const targetText = state.targetMode === 'production' ? 'PROD' : (state.targetMode === 'development' ? 'DEV' : '');
+            ui.cp.badge.textContent = targetText ? `SWITCHING TO ${targetText}...` : `PROCESSING...`;
             
             // Re-use logic to disable buttons
             toggleButtons(false); 
