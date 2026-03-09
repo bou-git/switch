@@ -22,8 +22,11 @@ app.use(express.json());
 
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
-  max: 50, // limit each IP to 50 requests per windowMs
-  message: { error: "Too many requests from this IP, please try again later." }
+  max: 500, // limit each IP to 50 requests per windowMs
+  message: { error: "Too many requests from this IP, please try again later." },
+  keyGenerator: (req) => {
+    return req.ip ? req.ip.replace(/:\d+[^:]*$/, '') : 'unknown';
+  }
 });
 app.use(limiter);
 
@@ -37,7 +40,7 @@ const CONFIG = {
   USERS_ME_ENDPOINT: "/admin/users/me",
   AUDIT_LOG_ENDPOINT: "/api/audit-logs",
   NSSM_PATH: "C:\\nssm\\nssm.exe", // change if different
-  STRAPI_PROJECT_PATH: "G:\\bank of uganda\\bou-backend\\backend\\backend", // change to your real path
+  STRAPI_PROJECT_PATH: "G:\\bank of uganda\\bank of uganda\\backend\\backend", // change to your real path
   STRAPI_API_TOKEN: "acda5dcef2fd2b593d2d35c20bcdf2d26b356dfd0f826f7f13b303a5ad4acd77276a8455328e58b6d11d70e069d0145625880a8aa699d7ad0e847d560d6543841555eb9214a7a2f02a0851d4da52701b5a9fe1e554e605f9ece27b883a80ac4b587d59cbf394c16f62a667a919a5ed26233a58babb2aa72139471f3da8251203", // Strapi API Token
   DB_HOST: "127.0.0.1",
   DB_PORT: 5432,
@@ -132,8 +135,8 @@ async function logAuditToStrapi(action, userEmail, userId) {
       data: {
         action: action,
         contentType: "Server Configuration",
-        newData: { 
-            info: `Triggered by ${userEmail}` 
+        newData: {
+          info: `Triggered by ${userEmail}`
         },
         actionTime: new Date().toISOString(),
         user: userId
@@ -155,13 +158,13 @@ async function updateDbStatus(updates) {
   try {
     const keys = Object.keys(updates);
     if (keys.length === 0) return;
-    
+
     // Always append updated_at
     updates.updated_at = new Date().toISOString();
-    
+
     const setQuery = keys.map((key, index) => `${key} = $${index + 1}`).join(", ");
     const values = keys.map(key => updates[key]);
-    
+
     await pgClient.query(`UPDATE infrastructure_status SET ${setQuery} WHERE id = 1`, values);
   } catch (err) {
     writeLog(`ERROR: Failed to update DB status: ${err.message}`);
@@ -173,17 +176,17 @@ app.get("/status", verifyToken, async (req, res) => {
   try {
     const dbRes = await pgClient.query('SELECT * FROM infrastructure_status WHERE id = 1');
     if (dbRes.rows.length === 0) {
-        return res.json({ currentMode: "prod", isProcessing: false }); // Fallback
+      return res.json({ currentMode: "prod", isProcessing: false }); // Fallback
     }
 
     const row = dbRes.rows[0];
     const isProcessing = row.switch_status !== 'idle';
-    
+
     res.json({
-        currentMode: isProcessing ? "transitioning" : (row.current_environment === 'development' ? 'dev' : 'prod'),
-        isProcessing: isProcessing,
-        targetMode: row.target_environment,
-        progressMessage: row.progress_message
+      currentMode: isProcessing ? "transitioning" : (row.current_environment === 'development' ? 'dev' : 'prod'),
+      isProcessing: isProcessing,
+      targetMode: row.target_environment,
+      progressMessage: row.progress_message
     });
   } catch (err) {
     writeLog(`Status Endpoint WARNING: DB Error (${err.message}). Defaulting to fallback.`);
@@ -204,7 +207,7 @@ async function updateStrapiSettingsWithRetry(payload, maxRetries = 360, retryDel
       writeLog("Successfully updated Strapi settings.");
       return true;
     } catch (err) {
-      writeLog(`Failed to update Strapi settings (${err.message}). Retrying in ${retryDelay/1000}s...`);
+      writeLog(`Failed to update Strapi settings (${err.message}). Retrying in ${retryDelay / 1000}s...`);
       await delay(retryDelay);
     }
   }
@@ -251,7 +254,7 @@ async function startDev() {
 async function buildProject() {
   writeLog("Starting Project Build...");
 
-    return new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const buildProcess = exec("npm run build", {
       cwd: CONFIG.STRAPI_PROJECT_PATH,
     });
@@ -295,19 +298,19 @@ app.post("/switch/dev", async (req, res) => {
   try {
     const dbRes = await pgClient.query('SELECT switch_status FROM infrastructure_status WHERE id = 1');
     if (dbRes.rows[0]?.switch_status !== 'idle') {
-        return res.status(409).json({ error: "A process is already running." });
+      return res.status(409).json({ error: "A process is already running." });
     }
-    
+
     writeLog(`[AUDIT] Switching to DEV mode - Requested by: ${req.user?.email}`);
-    
+
     await updateDbStatus({
-        switch_status: 'in_progress',
-        target_environment: 'development',
-        progress_message: 'Initiating switch to Development Mode...',
-        triggered_by: req.user?.email,
-        started_at: new Date().toISOString()
+      switch_status: 'in_progress',
+      target_environment: 'development',
+      progress_message: 'Initiating switch to Development Mode...',
+      triggered_by: req.user?.email,
+      started_at: new Date().toISOString()
     });
-    
+
     // Save Audit event immediately to Strapi
     await logAuditToStrapi("Switch to Development Mode", req.user?.email, req.user?.id);
 
@@ -317,7 +320,7 @@ app.post("/switch/dev", async (req, res) => {
     // 2. WIPE THE DEV LOG FILE (Clear the notebook)
     const outputFile = path.join(DEV_LOG_DIR, "strapi-output.log");
     if (fs.existsSync(outputFile)) {
-        fs.writeFileSync(outputFile, ""); // Make it empty
+      fs.writeFileSync(outputFile, ""); // Make it empty
     }
 
     // 3. Start Development Service
@@ -333,18 +336,18 @@ app.post("/switch/dev", async (req, res) => {
     });
 
     await updateDbStatus({
-        switch_status: 'idle',
-        current_environment: 'development',
-        target_environment: null,
-        progress_message: 'System operating in Development mode',
-        completed_at: new Date().toISOString()
+      switch_status: 'idle',
+      current_environment: 'development',
+      target_environment: null,
+      progress_message: 'System operating in Development mode',
+      completed_at: new Date().toISOString()
     });
 
     res.json({ message: "Development start signal sent" });
   } catch (err) {
     await updateDbStatus({
-        switch_status: 'failed',
-        progress_message: `Switch failed: ${err.message}`
+      switch_status: 'failed',
+      progress_message: `Switch failed: ${err.message}`
     });
     res.status(500).json({ error: err.message });
   }
@@ -366,17 +369,17 @@ app.post("/switch/prod", async (req, res) => {
   try {
     const dbRes = await pgClient.query('SELECT switch_status FROM infrastructure_status WHERE id = 1');
     if (dbRes.rows[0]?.switch_status !== 'idle') {
-        return res.status(409).json({ error: "A process is already running." });
+      return res.status(409).json({ error: "A process is already running." });
     }
 
     writeLog("Switching to PROD mode...");
-    
+
     await updateDbStatus({
-        switch_status: 'in_progress',
-        target_environment: 'production',
-        progress_message: 'Initiating switch to Production Mode...',
-        triggered_by: req.user?.email,
-        started_at: new Date().toISOString()
+      switch_status: 'in_progress',
+      target_environment: 'production',
+      progress_message: 'Initiating switch to Production Mode...',
+      triggered_by: req.user?.email,
+      started_at: new Date().toISOString()
     });
 
     await stopDev();
@@ -384,12 +387,12 @@ app.post("/switch/prod", async (req, res) => {
     // 1. WIPE THE LOG FILE (The "Fresh Notebook")
     const outputFile = path.join(PROD_LOG_DIR, "strapi-output.log");
     if (fs.existsSync(outputFile)) {
-        fs.writeFileSync(outputFile, ""); // This makes the file empty
+      fs.writeFileSync(outputFile, ""); // This makes the file empty
     }
 
     // Since this endpoint is taking 30 minutes, we should respond IMMEDIATELY 
     // to the frontend, and run the intensive build in the background.
-    
+
     res.json({ message: "Production build started in background" });
 
     // BACKGROUND PROCESS
@@ -397,10 +400,10 @@ app.post("/switch/prod", async (req, res) => {
       try {
         await updateDbStatus({ progress_message: 'Building Project (This will take a while)...' });
         await buildProject();
-        
+
         await updateDbStatus({ progress_message: 'Starting Production Service...' });
         await startProd();
-        
+
         // Wait till Strapi is up, then update its settings to disable dev mode
         await updateStrapiSettingsWithRetry({
           data: {
@@ -410,26 +413,26 @@ app.post("/switch/prod", async (req, res) => {
         });
 
         await updateDbStatus({
-            switch_status: 'idle',
-            current_environment: 'production',
-            target_environment: null,
-            progress_message: 'System operating in Production mode',
-            completed_at: new Date().toISOString()
+          switch_status: 'idle',
+          current_environment: 'production',
+          target_environment: null,
+          progress_message: 'System operating in Production mode',
+          completed_at: new Date().toISOString()
         });
 
       } catch (e) {
         writeLog("Background PROD sequence failed: " + e.message);
         await updateDbStatus({
-            switch_status: 'failed',
-            progress_message: `Switch failed during build/start: ${e.message}`
+          switch_status: 'failed',
+          progress_message: `Switch failed during build/start: ${e.message}`
         });
       }
     })();
 
   } catch (err) {
     await updateDbStatus({
-        switch_status: 'failed',
-        progress_message: `Switch failed: ${err.message}`
+      switch_status: 'failed',
+      progress_message: `Switch failed: ${err.message}`
     });
     res.status(500).json({ error: err.message });
   }
@@ -486,31 +489,31 @@ app.get("/logs/stream/:mode", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-const sendLogs = () => {
-  let logs = "";
+  const sendLogs = () => {
+    let logs = "";
 
-  try {
-    if (fs.existsSync(outputFile)) {
-      logs += fs.readFileSync(outputFile, "utf8");
+    try {
+      if (fs.existsSync(outputFile)) {
+        logs += fs.readFileSync(outputFile, "utf8");
+      }
+
+      if (fs.existsSync(errorFile)) {
+        logs += "\n\n----- ERRORS -----\n\n";
+        logs += fs.readFileSync(errorFile, "utf8");
+      }
+
+      if (!logs.trim()) {
+        logs = "No logs yet...";
+      }
+
+      logs = logs.split("\n").slice(-200).join("\n");
+
+      res.write(`data: ${JSON.stringify(logs)}\n\n`);
+
+    } catch (err) {
+      res.write(`data: ${JSON.stringify("Log read error: " + err.message)}\n\n`);
     }
-
-    if (fs.existsSync(errorFile)) {
-      logs += "\n\n----- ERRORS -----\n\n";
-      logs += fs.readFileSync(errorFile, "utf8");
-    }
-
-    if (!logs.trim()) {
-      logs = "No logs yet...";
-    }
-
-    logs = logs.split("\n").slice(-200).join("\n");
-
-    res.write(`data: ${JSON.stringify(logs)}\n\n`);
-
-  } catch (err) {
-    res.write(`data: ${JSON.stringify("Log read error: " + err.message)}\n\n`);
-  }
-};
+  };
 
   sendLogs();
 
