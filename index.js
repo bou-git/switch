@@ -12,6 +12,7 @@ const DEV_LOG_DIR = "G:\\bank of uganda\\logs\\dev logs";
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const NodeCache = require("node-cache");
+const jwt = require("jsonwebtoken"); // ADDED JWT
 const tokenCache = new NodeCache({ stdTTL: 300 }); // 5 minutes cache
 
 const app = express();
@@ -41,14 +42,15 @@ const CONFIG = {
   AUDIT_LOG_ENDPOINT: "/api/audit-logs",
   NSSM_PATH: "C:\\nssm\\nssm.exe", // change if different
   STRAPI_PROJECT_PATH: "G:\\bank of uganda\\bank of uganda\\backend\\backend", // change to your real path
-  STRAPI_API_TOKEN: "acda5dcef2fd2b593d2d35c20bcdf2d26b356dfd0f826f7f13b303a5ad4acd77276a8455328e58b6d11d70e069d0145625880a8aa699d7ad0e847d560d6543841555eb9214a7a2f02a0851d4da52701b5a9fe1e554e605f9ece27b883a80ac4b587d59cbf394c16f62a667a919a5ed26233a58babb2aa72139471f3da8251203", // Strapi API Token
-  STRAPI_PROJECT_PATH: "G:\\bank of uganda\\bank of uganda\\backend\\backend", // change to your real path
   STRAPI_API_TOKEN: "55b564dc5c9ad792170318288473e17dc0bb17fb1a7423374ab023a54126cde0a1bc2139f8127207c58a3f2b0d4a31aeaa69d4f570400c176dfcd556ed250427afdbdea0e49369998db965550e426e03db0cb54f35a588d61b2523886a3905f93b89684b4d64a68bcd077635fa2b4195dcedcac02d4f80c78221ee4a0679df0d", // Strapi API Token
   DB_HOST: "127.0.0.1",
   DB_PORT: 5432,
   DB_NAME: "bou",
   DB_USER: "postgres",
-  DB_PASS: "BankOfUgandaWebSite@2026"
+  DB_PASS: "BankOfUgandaWebSite@2026",
+  BACKUP_EMAIL: "infraadmin@bou.or.ug",
+  BACKUP_PASSWORD: "EmergencyPassword2026!",
+  JWT_SECRET: "s3cr3t_em3rg3ncy_k3y_b0u"
 };
 
 const LOG_DIR = path.join(__dirname, "logs");
@@ -93,6 +95,18 @@ async function verifyToken(req, res, next) {
     return res.status(403).json({ error: "Forbidden: Infra Admin role required" });
   }
 
+  // 1. Try decoding as local backup JWT first
+  try {
+    const decoded = jwt.verify(token, CONFIG.JWT_SECRET);
+    if (decoded && decoded.isInfraAdmin) {
+      req.user = decoded;
+      return next();
+    }
+  } catch (err) {
+    // If it fails, we fall through and try as a Strapi token
+  }
+
+  // 2. Try validating as Strapi token
   try {
     const meRes = await axios.get(`${CONFIG.STRAPI_BASE_URL}${CONFIG.USERS_ME_ENDPOINT}`, {
       headers: { Authorization: `Bearer ${token}` }
@@ -173,7 +187,6 @@ async function updateDbStatus(updates) {
   }
 }
 
-// Add an audit login endpoint
 app.post("/audit/login", async (req, res) => {
   try {
     const userEmail = req.user?.email || "Unknown User";
@@ -183,6 +196,56 @@ app.post("/audit/login", async (req, res) => {
   } catch (err) {
     writeLog(`ERROR: Failed to audit login: ${err.message}`);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Primary Login Endpoint (Proxy to Strapi with Local Backup)
+app.post("/api/login", async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({ error: "Email and password are required" });
+  }
+
+  try {
+    // 1. Try hitting Strapi first
+    const loginRes = await axios.post(`${CONFIG.STRAPI_BASE_URL}/admin/login`, {
+      email,
+      password,
+    });
+    
+    // Strapi Login Success
+    return res.json(loginRes.data);
+  } catch (error) {
+    // 2. If Strapi fails, check WHY it failed
+    const status = error.response ? error.response.status : null;
+    
+    // If explicit invalid credentials (400, 401), we do NOT fallback to backup unless it matches exactly.
+    // Instead of completely failing, let's check the local backup in ALL error cases where Strapi doesn't work.
+    // (A 502 Bad Gateway means the proxy is up but Strapi is restarting)
+
+    if (email === CONFIG.BACKUP_EMAIL && password === CONFIG.BACKUP_PASSWORD) {
+      writeLog(`Authentication fallback triggered. Backup access granted for ${email}`);
+      const fallbackToken = jwt.sign(
+        { email: CONFIG.BACKUP_EMAIL, isInfraAdmin: true, id: null },
+        CONFIG.JWT_SECRET,
+        { expiresIn: "1h" }
+      );
+      
+      return res.json({
+        data: {
+          token: fallbackToken,
+          user: { email: CONFIG.BACKUP_EMAIL }
+        }
+      });
+    }
+
+    // If backup credentials do not match, we throw the original error back to the client
+    if (status === 401 || status === 400) {
+      return res.status(401).json({ error: "Invalid email or password." });
+    }
+
+    return res.status(503).json({ error: "Service Unavailable: Authentication backend is down." });
   }
 });
 
