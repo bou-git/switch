@@ -347,7 +347,7 @@ async function buildProject() {
 
     buildProcess.stderr.on("data", (data) => {
       fs.appendFileSync(buildLogPath, data);
-      writeLog("BUILD ERROR: " + data);
+      writeLog("BUILD" + data);
     });
 
     buildProcess.on("close", (code) => {
@@ -360,6 +360,73 @@ async function buildProject() {
     });
   });
 }
+
+/**
+ * @swagger
+ * /switch/emergency-dev:
+ *   post:
+ *     summary: Force Switch to Development Mode (Backup)
+ *     description: Stops production service and starts development service forcefully, ignoring current lock states.
+ *     responses:
+ *       200:
+ *         description: Successfully forced dev mode
+ *       500:
+ *         description: Internal server error
+ */
+app.post("/switch/emergency-dev", async (req, res) => {
+  try {
+    writeLog(`[EMERGENCY AUDIT] Force Switching to DEV mode - Requested by: ${req.user?.email || 'Backup Admin'}`);
+
+    // Update DB to reflect the forced override
+    await updateDbStatus({
+      switch_status: 'in_progress',
+      target_environment: 'development',
+      progress_message: 'EMERGENCY OVERRIDE: Forcing switch to Development Mode...',
+      triggered_by: req.user?.email || 'Backup Admin',
+      started_at: new Date().toISOString()
+    });
+
+    // Try to log to Strapi, but it might be down so ignore errors
+    logAuditToStrapi("EMERGENCY Force Switch to Development Mode", req.user?.email || 'Backup Admin', req.user?.id).catch(() => {});
+
+    // 1. Force Stop Production (ignoring errors if it's already crashed)
+    try { await stopProd(); } catch (e) { writeLog(`Emergency: stopProd error (ignored): ${e.message}`); }
+
+    // 2. WIPE THE DEV LOG FILE
+    const outputFile = path.join(DEV_LOG_DIR, "strapi-output.log");
+    if (fs.existsSync(outputFile)) {
+      try { fs.writeFileSync(outputFile, ""); } catch(e) {}
+    }
+
+    // 3. Start Development Service
+    await startDev();
+
+    // 4. Update Strapi Settings in the background (will succeed once it boots)
+    updateStrapiSettingsWithRetry({
+      data: {
+        maintenanceMode: true,
+        devModeActive: true
+      }
+    });
+
+    await updateDbStatus({
+      switch_status: 'idle',
+      current_environment: 'development',
+      target_environment: null,
+      progress_message: 'System operating in Development mode (Emergency Started)',
+      completed_at: new Date().toISOString()
+    });
+
+    res.json({ message: "Emergency Development start signal sent" });
+  } catch (err) {
+    writeLog(`EMERGENCY SWITCH FAILED: ${err.message}`);
+    await updateDbStatus({
+      switch_status: 'failed',
+      progress_message: `Emergency Switch failed: ${err.message}`
+    });
+    res.status(500).json({ error: err.message });
+  }
+});
 
 /**
  * @swagger
