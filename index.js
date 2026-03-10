@@ -38,7 +38,7 @@ const CONFIG = {
   AUDIT_LOG_ENDPOINT: "/api/audit-logs",
   NSSM_PATH: "C:\\nssm\\nssm.exe", // change if different
   STRAPI_PROJECT_PATH: "G:\\bank of uganda\\bou-backend\\backend\\backend", // change to your real path
-  STRAPI_API_TOKEN: "acda5dcef2fd2b593d2d35c20bcdf2d26b356dfd0f826f7f13b303a5ad4acd77276a8455328e58b6d11d70e069d0145625880a8aa699d7ad0e847d560d6543841555eb9214a7a2f02a0851d4da52701b5a9fe1e554e605f9ece27b883a80ac4b587d59cbf394c16f62a667a919a5ed26233a58babb2aa72139471f3da8251203", // Strapi API Token
+  STRAPI_API_TOKEN: "55b564dc5c9ad792170318288473e17dc0bb17fb1a7423374ab023a54126cde0a1bc2139f8127207c58a3f2b0d4a31aeaa69d4f570400c176dfcd556ed250427afdbdea0e49369998db965550e426e03db0cb54f35a588d61b2523886a3905f93b89684b4d64a68bcd077635fa2b4195dcedcac02d4f80c78221ee4a0679df0d", // Strapi API Token
   DB_HOST: "127.0.0.1",
   DB_PORT: 5432,
   DB_NAME: "bou",
@@ -167,6 +167,19 @@ async function updateDbStatus(updates) {
     writeLog(`ERROR: Failed to update DB status: ${err.message}`);
   }
 }
+
+// Add an audit login endpoint
+app.post("/audit/login", async (req, res) => {
+  try {
+    const userEmail = req.user?.email || "Unknown User";
+    const userId = req.user?.id || null;
+    await logAuditToStrapi("Logged into Control Panel", userEmail, userId);
+    res.json({ message: "Login audited successfully" });
+  } catch (err) {
+    writeLog(`ERROR: Failed to audit login: ${err.message}`);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // Add a status endpoint
 app.get("/status", verifyToken, async (req, res) => {
@@ -379,6 +392,9 @@ app.post("/switch/prod", async (req, res) => {
         started_at: new Date().toISOString()
     });
 
+    // Save Audit event immediately to Strapi
+    await logAuditToStrapi("Switch to Production Mode", req.user?.email, req.user?.id);
+
     await stopDev();
 
     // 1. WIPE THE LOG FILE (The "Fresh Notebook")
@@ -469,18 +485,21 @@ app.get("/logs", (req, res) => {
 app.get("/logs/stream/:mode", (req, res) => {
   const mode = req.params.mode; // dev or prod
 
-  let logDir;
+  let outputFile;
+  let errorFile;
 
   if (mode === "dev") {
-    logDir = DEV_LOG_DIR;
+    outputFile = path.join(DEV_LOG_DIR, "strapi-output.log");
+    errorFile = path.join(DEV_LOG_DIR, "strapi-error.log");
   } else if (mode === "prod") {
-    logDir = PROD_LOG_DIR;
+    outputFile = path.join(PROD_LOG_DIR, "strapi-output.log");
+    errorFile = path.join(PROD_LOG_DIR, "strapi-error.log");
+  } else if (mode === "control") {
+    outputFile = LOG_FILE;
+    errorFile = null;
   } else {
     return res.status(400).json({ error: "Invalid mode" });
   }
-
-  const outputFile = path.join(logDir, "strapi-output.log");
-  const errorFile = path.join(logDir, "strapi-error.log");
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
@@ -494,7 +513,7 @@ const sendLogs = () => {
       logs += fs.readFileSync(outputFile, "utf8");
     }
 
-    if (fs.existsSync(errorFile)) {
+    if (errorFile && fs.existsSync(errorFile)) {
       logs += "\n\n----- ERRORS -----\n\n";
       logs += fs.readFileSync(errorFile, "utf8");
     }

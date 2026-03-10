@@ -444,13 +444,8 @@
         setTimeout(() => {
             updateBadgeUI();
             
-            // If we are transitioning, we still want to stream the logs of the target environment
-            let logStreamMode = state.mode;
-            if (logStreamMode === 'transitioning') {
-                logStreamMode = state.targetMode === 'development' ? 'dev' : 'prod';
-            }
-            
-            startLogStream(logStreamMode);
+            // Always stream the control logs instead of target environment logs to see the manager actions
+            startLogStream('control');
         }, 800);
     }
     
@@ -539,6 +534,16 @@
                 throw new Error('Access Denied: Only Infra Admin allowed.');
             }
 
+            // Log login audit
+            try {
+                await fetch(`${CONFIG.MANAGER_URL}/audit/login`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+            } catch (err) {
+                console.warn('Failed to audit login', err);
+            }
+
             initControlPanel();
         } catch (error) {
             ui.login.error.textContent = error.message;
@@ -616,8 +621,8 @@
             state.mode = targetMode;
             updateBadgeUI();
             
-            // Connect to the new log stream
-            startLogStream(targetMode);
+            // Re-connect to control log stream
+            startLogStream('control');
             
             // Start polling to know when it finishes
             startStatusPolling();
