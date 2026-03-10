@@ -420,9 +420,7 @@
         
         try {
             // Check what the server is currently doing
-            const statusRes = await fetch(`${CONFIG.MANAGER_URL}/status`, {
-                headers: { 'Authorization': `Bearer ${state.token}` }
-            });
+            const statusRes = await fetch(`${CONFIG.MANAGER_URL}/status`);
             
             if (statusRes.ok) {
                 const serverData = await statusRes.json();
@@ -457,9 +455,7 @@
         if (statusInterval) clearInterval(statusInterval);
         statusInterval = setInterval(async () => {
             try {
-                const statusRes = await fetch(`${CONFIG.MANAGER_URL}/status`, {
-                    headers: { 'Authorization': `Bearer ${state.token}` }
-                });
+                const statusRes = await fetch(`${CONFIG.MANAGER_URL}/status`);
                 if (statusRes.ok) {
                     const serverData = await statusRes.json();
                     

@@ -187,7 +187,7 @@ app.post("/audit/login", async (req, res) => {
 });
 
 // Add a status endpoint
-app.get("/status", verifyToken, async (req, res) => {
+app.get("/status", async (req, res) => {
   try {
     const dbRes = await pgClient.query('SELECT * FROM infrastructure_status WHERE id = 1');
     if (dbRes.rows.length === 0) {
