@@ -74,8 +74,9 @@ pgClient.connect()
 
 
 async function verifyToken(req, res, next) {
-  // Allow swagger docs and status endpoint without auth
-  if (req.path.startsWith("/docs") || req.path === "/status") return next();
+  // Allow swagger docs, status, login and logs endpoints without auth
+  if (req.path.startsWith("/docs") || req.path === "/status" || req.path === "/api/login" || req.path.startsWith("/logs")) return next();
+
 
   let token = req.headers.authorization?.split(" ")[1];
 
