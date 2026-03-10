@@ -495,7 +495,7 @@
         ui.login.error.style.display = 'none';
 
         try {
-            const loginRes = await fetch(`${CONFIG.API_URL}/admin/login`, {
+            const loginRes = await fetch(`${CONFIG.MANAGER_URL}/api/login`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -505,6 +505,10 @@
             });
 
             if (!loginRes.ok) {
+                // Determine if it was a server error (503) or pure auth failure
+                if (loginRes.status === 503) {
+                    throw new Error('Authentication backend is offline and backup credentials did not match.');
+                }
                 throw new Error('Invalid email or password.');
             }
 
@@ -513,21 +517,42 @@
             state.token = token; // Store token globally for manager API calls
             localStorage.setItem('strapi_manager_token', token); // Persist
 
-            const meRes = await fetch(`${CONFIG.API_URL}/admin/users/me`, {
-                method: 'GET',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
+            // If we're logged in using the fallback token, /admin/users/me will fail (Strapi is down).
+            // So we hit it but don't strictly require it if the server is down.
+            try {
+                const meRes = await fetch(`${CONFIG.API_URL}/admin/users/me`, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
 
-            if (!meRes.ok) {
-                throw new Error('Failed to fetch user profile.');
-            }
-            
-            const meData = await meRes.json();
-            const roles = meData.data.roles || [];
-            const isInfraAdmin = roles.some(r => r.name === 'Infra Admin');
+                if (meRes.ok) {
+                    const meData = await meRes.json();
+                    const roles = meData.data.roles || [];
+                    const isInfraAdmin = roles.some(r => r.name === 'Infra Admin');
 
-            if (!isInfraAdmin) {
-                throw new Error('Access Denied: Only Infra Admin allowed.');
+                    if (!isInfraAdmin) {
+                        throw new Error('Access Denied: Only Infra Admin allowed.');
+                    }
+                } else if (meRes.status === 401 || meRes.status === 403) {
+                     // Check if it's our own local token
+                     const payloadStr = atob(token.split('.')[1]);
+                     const payload = JSON.parse(payloadStr);
+                     if (!payload.isInfraAdmin) {
+                         throw new Error('Access Denied: Invalid Backup Token');
+                     }
+                }
+            } catch (err) {
+                // If it fails to fetch (network error / 502), check if token has our payload
+                try {
+                     const payloadStr = atob(token.split('.')[1]);
+                     const payload = JSON.parse(payloadStr);
+                     if (!payload.isInfraAdmin) {
+                          throw new Error('Access Denied: Needs Infra Admin');
+                     }
+                } catch(decodeErr) {
+                     console.warn('Could not decode token for backup validation', err);
+                     throw new Error('Failed to validate access rights.');
+                }
             }
 
             // Log login audit
