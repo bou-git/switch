@@ -294,10 +294,21 @@ async function updateStrapiSettingsWithRetry(payload, maxRetries = 360, retryDel
   return false;
 }
 
-function run(command) {
+function run(command, fallbackCommand = null) {
   return new Promise((resolve, reject) => {
     exec(command, (err, stdout, stderr) => {
       if (err) {
+        // NSSM often outputs UTF-16 with null bytes, so we clean it up to check the message
+        const cleanMsg = err.message.replace(/\0/g, '');
+        if (cleanMsg.includes("already running") || cleanMsg.includes("SERVICE_ALREADY_RUNNING")) {
+          writeLog(`Notice: Process already running for command: ${command}`);
+          
+          if (fallbackCommand) {
+            writeLog(`Executing fallback command: ${fallbackCommand}`);
+            return resolve(run(fallbackCommand)); // Recursively run the fallback
+          }
+          return resolve(stdout || cleanMsg);
+        }
         writeLog("ERROR: " + err.message);
         return reject(err);
       }
@@ -317,7 +328,10 @@ async function stopProd() {
 
 async function startProd() {
   writeLog("Starting Production Service...");
-  return run(`"${CONFIG.NSSM_PATH}" start StrapiService`);
+  return run(
+      `"${CONFIG.NSSM_PATH}" start StrapiService`,
+      `"${CONFIG.NSSM_PATH}" restart StrapiService` // Fallback if already running
+  );
 }
 
 async function stopDev() {
@@ -327,7 +341,10 @@ async function stopDev() {
 
 async function startDev() {
   writeLog("Starting Dev Service...");
-  return run(`"${CONFIG.NSSM_PATH}" start StrapiDevService`);
+  return run(
+      `"${CONFIG.NSSM_PATH}" start StrapiDevService`,
+      `"${CONFIG.NSSM_PATH}" restart StrapiDevService` // Fallback if already running
+  );
 }
 
 async function buildProject() {
