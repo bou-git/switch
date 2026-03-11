@@ -50,7 +50,9 @@ const CONFIG = {
   DB_PASS: "BankOfUgandaWebSite@2026",
   BACKUP_EMAIL: "infraadmin@bou.or.ug",
   BACKUP_PASSWORD: "EmergencyPassword2026!",
-  JWT_SECRET: "s3cr3t_em3rg3ncy_k3y_b0u"
+  JWT_SECRET: "s3cr3t_em3rg3ncy_k3y_b0u",
+  PG_DUMP_PATH: "C:\\Program Files\\PostgreSQL\\17\\bin\\pg_dump.exe",
+  BACKUP_DIR: "G:\\bou-backups\\dbdumps"
 };
 
 const LOG_DIR = path.join(__dirname, "logs");
@@ -186,6 +188,38 @@ async function updateDbStatus(updates) {
   } catch (err) {
     writeLog(`ERROR: Failed to update DB status: ${err.message}`);
   }
+}
+
+// Helper to backup database
+async function backupDatabase() {
+  return new Promise((resolve, reject) => {
+    try {
+      if (!fs.existsSync(CONFIG.BACKUP_DIR)) {
+        fs.mkdirSync(CONFIG.BACKUP_DIR, { recursive: true });
+      }
+
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      const backupFile = path.join(CONFIG.BACKUP_DIR, `bou_backup_${timestamp}.sql`);
+      
+      writeLog(`Starting Database Backup to: ${backupFile}`);
+
+      process.env.PGPASSWORD = CONFIG.DB_PASS;
+      const command = `"${CONFIG.PG_DUMP_PATH}" -h ${CONFIG.DB_HOST} -p ${CONFIG.DB_PORT} -U ${CONFIG.DB_USER} -d ${CONFIG.DB_NAME} -f "${backupFile}"`;
+
+      exec(command, (err, stdout, stderr) => {
+        delete process.env.PGPASSWORD;
+        if (err) {
+          writeLog(`DATABASE BACKUP ERROR: ${err.message}`);
+          return reject(err);
+        }
+        writeLog(`Database Backup Completed Successfully: ${backupFile}`);
+        resolve(backupFile);
+      });
+    } catch (err) {
+      writeLog(`DATABASE BACKUP EXCEPTION: ${err.message}`);
+      reject(err);
+    }
+  });
 }
 
 app.post("/audit/login", async (req, res) => {
@@ -399,6 +433,9 @@ app.post("/switch/emergency-dev", async (req, res) => {
 
     writeLog(`[EMERGENCY AUDIT] Force Switching to DEV mode - Requested by: ${req.user?.email || 'Backup Admin'}`);
 
+    // Try to backup DB, but don't let it block if it fails in emergency
+    backupDatabase().catch(e => writeLog(`Emergency: backupDatabase error (ignored): ${e.message}`));
+
     // Update DB to reflect the forced override
     await updateDbStatus({
       switch_status: 'in_progress',
@@ -481,6 +518,13 @@ app.post("/switch/dev", async (req, res) => {
 
     // Save Audit event immediately to Strapi
     await logAuditToStrapi("Switch to Development Mode", req.user?.email, req.user?.id);
+
+    // 0. Backup Database
+    try {
+      await backupDatabase();
+    } catch (err) {
+      writeLog(`Switch Warning: Database backup failed, but proceeding: ${err.message}`);
+    }
 
     // 1. Stop Production first
     await stopProd();
