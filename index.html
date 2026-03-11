@@ -593,15 +593,21 @@
     function initiateSwitch(targetMode) {
         if (state.isProcessing) return;
 
-        // If the backend API says we are already in this mode, optionally warn the user
-        // However, we still allow them to send the restart signal if they want to force restart
+        // Immediate feedback and lock
+        state.isProcessing = true;
+        toggleButtons(false);
+
         const modeStr = targetMode === 'prod' ? 'Production' : 'Development';
         if (targetMode === state.mode) {
             if (!confirm(`Server is already running in ${modeStr} mode. Do you want to force restart it anyway?`)) {
+                state.isProcessing = false;
+                toggleButtons(true);
                 return;
             }
         } else {
             if (!confirm(`Warning: Switching to ${modeStr} mode will restart the backend server. Existing connections may be temporarily dropped. Proceed?`)) {
+                state.isProcessing = false;
+                toggleButtons(true);
                 return;
             }
         }
@@ -610,8 +616,7 @@
     }
 
     async function executeStateTransition(targetMode) {
-        state.isProcessing = true;
-        toggleButtons(false);
+        // State is already locked by initiateSwitch
         stopLogStream();
 
         const modeStr = targetMode === 'prod' ? 'Production' : 'Development';
@@ -668,12 +673,18 @@
     }
 
     async function initiateEmergencySwitch() {
+        if (state.isProcessing) return;
+
+        // Immediate feedback and lock
+        state.isProcessing = true;
+        toggleButtons(false);
+
         if (!confirm('EMERGENCY: This will forcefully stop the backend Server and ignore any tracking locks. Only use this if the system is completely stuck or crashed. Proceed?')) {
+            state.isProcessing = false;
+            toggleButtons(true);
             return;
         }
         
-        state.isProcessing = true;
-        toggleButtons(false);
         stopLogStream();
 
         streamNativeLog('SYSTEM', 'Initiating EMERGENCY transition to Development mode...', 'error');
@@ -791,13 +802,21 @@
     }
 
     function appendRawLog(htmlContent) {
+        const terminal = ui.cp.terminal;
+        // Check if user is at the bottom (with a 50px buffer)
+        const isAtBottom = terminal.scrollHeight - terminal.clientHeight <= terminal.scrollTop + 50;
+
         const line = document.createElement('div');
         line.className = 'log-line';
-        line.style.marginBottom = '0'; // Keep it tight like a real terminal output for multi-line logs
+        line.style.marginBottom = '0'; 
         line.innerHTML = htmlContent;
         
-        ui.cp.terminal.appendChild(line);
-        ui.cp.terminal.scrollTop = ui.cp.terminal.scrollHeight;
+        terminal.appendChild(line);
+
+        // Only auto-scroll if the user was already at the bottom
+        if (isAtBottom) {
+            terminal.scrollTop = terminal.scrollHeight;
+        }
     }
 
     function ansiToHtml(text) {

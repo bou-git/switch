@@ -707,33 +707,51 @@ app.get("/logs/stream/:mode", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
+  let lastSize = 0;
+  let hasSentInitial = false;
+
   const sendLogs = () => {
-    let logs = "";
-
     try {
-      if (fs.existsSync(outputFile)) {
-        logs += fs.readFileSync(outputFile, "utf8");
+      if (!fs.existsSync(outputFile)) {
+        if (!hasSentInitial) {
+          res.write(`data: ${JSON.stringify("Waiting for logs...")}\n\n`);
+          hasSentInitial = true;
+        }
+        return;
       }
 
-      if (fs.existsSync(errorFile)) {
-        logs += "\n\n----- ERRORS -----\n\n";
-        logs += fs.readFileSync(errorFile, "utf8");
+      const stats = fs.statSync(outputFile);
+      const currentSize = stats.size;
+
+      if (!hasSentInitial) {
+        // Initial load: send last ~10KB of logs
+        const start = Math.max(0, currentSize - 10000);
+        const fd = fs.openSync(outputFile, 'r');
+        const buffer = Buffer.alloc(currentSize - start);
+        fs.readSync(fd, buffer, 0, buffer.length, start);
+        fs.closeSync(fd);
+        
+        lastSize = currentSize;
+        hasSentInitial = true;
+        res.write(`data: ${JSON.stringify(buffer.toString('utf8'))}\n\n`);
+      } else if (currentSize > lastSize) {
+        // Stream only the delta
+        const fd = fs.openSync(outputFile, 'r');
+        const deltaSize = currentSize - lastSize;
+        const buffer = Buffer.alloc(deltaSize);
+        fs.readSync(fd, buffer, 0, deltaSize, lastSize);
+        fs.closeSync(fd);
+
+        lastSize = currentSize;
+        res.write(`data: ${JSON.stringify(buffer.toString('utf8'))}\n\n`);
+      } else if (currentSize < lastSize) {
+        // File was truncated (likely a mode switch cleared the log)
+        lastSize = 0;
+        hasSentInitial = false; 
       }
-    if (errorFile && fs.existsSync(errorFile)) {
-      logs += "\n\n----- ERRORS -----\n\n";
-      logs += fs.readFileSync(errorFile, "utf8");
-    }
-
-      if (!logs.trim()) {
-        logs = "No logs yet...";
-      }
-
-      logs = logs.split("\n").slice(-200).join("\n");
-
-      res.write(`data: ${JSON.stringify(logs)}\n\n`);
-
     } catch (err) {
-      res.write(`data: ${JSON.stringify("Log read error: " + err.message)}\n\n`);
+      console.error("Log stream error:", err);
+      // Don't kill the stream for a single read error
     }
   };
 
