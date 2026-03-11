@@ -298,16 +298,16 @@ function run(command, fallbackCommand = null) {
   return new Promise((resolve, reject) => {
     exec(command, (err, stdout, stderr) => {
       if (err) {
-        // NSSM often outputs UTF-16 with null bytes, so we clean it up to check the message
-        const cleanMsg = err.message.replace(/\0/g, '');
-        if (cleanMsg.includes("already running") || cleanMsg.includes("SERVICE_ALREADY_RUNNING")) {
+        // NSSM often outputs UTF-16 with null bytes, so we aggressively clean it up
+        const cleanMsg = err.message.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        if (cleanMsg.includes("alreadyrunning") || cleanMsg.includes("servicealreadyrunning")) {
           writeLog(`Notice: Process already running for command: ${command}`);
           
           if (fallbackCommand) {
             writeLog(`Executing fallback command: ${fallbackCommand}`);
             return resolve(run(fallbackCommand)); // Recursively run the fallback
           }
-          return resolve(stdout || cleanMsg);
+          return resolve(stdout || err.message);
         }
         writeLog("ERROR: " + err.message);
         return reject(err);
@@ -392,6 +392,11 @@ async function buildProject() {
  */
 app.post("/switch/emergency-dev", async (req, res) => {
   try {
+    const dbRes = await pgClient.query('SELECT current_environment FROM infrastructure_status WHERE id = 1');
+    if (dbRes.rows[0]?.current_environment === 'development') {
+      return res.status(409).json({ error: "System is already operating in Development mode." });
+    }
+
     writeLog(`[EMERGENCY AUDIT] Force Switching to DEV mode - Requested by: ${req.user?.email || 'Backup Admin'}`);
 
     // Update DB to reflect the forced override

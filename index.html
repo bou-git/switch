@@ -739,8 +739,8 @@
             }
         } catch(e) {}
         
-        // Show emergency button if using backup token OR if stuck traversing styles
-        if (isBackupAdmin || state.mode === 'transitioning') {
+        // Show emergency button ONLY when status is transitioning (isProcessing is true)
+        if (state.mode === 'transitioning') {
              ui.cp.btnEmergency.style.display = 'inline-flex';
         } else {
              ui.cp.btnEmergency.style.display = 'none';
