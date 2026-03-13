@@ -439,17 +439,9 @@ async function buildProject() {
  */
 app.post("/switch/emergency-dev", async (req, res) => {
   try {
-    const dbRes = await pgClient.query('SELECT current_environment FROM infrastructure_status WHERE id = 1');
-    if (dbRes.rows[0]?.current_environment === 'development') {
-      return res.status(409).json({ error: "System is already operating in Development mode." });
-    }
-
     writeLog(`[EMERGENCY AUDIT] Force Switching to DEV mode - Requested by: ${req.user?.email || 'Backup Admin'}`);
 
-    // Try to backup DB, but don't let it block if it fails in emergency
-    backupDatabase().catch(e => writeLog(`Emergency: backupDatabase error (ignored): ${e.message}`));
-
-    // Update DB to reflect the forced override
+    // FORCE RESET: Immediately clear any stuck status in the database
     await updateDbStatus({
       switch_status: 'in_progress',
       target_environment: 'development',
@@ -458,11 +450,15 @@ app.post("/switch/emergency-dev", async (req, res) => {
       started_at: new Date().toISOString()
     });
 
+    // Try to backup DB, but don't let it block if it fails in emergency
+    backupDatabase().catch(e => writeLog(`Emergency: backupDatabase error (ignored): ${e.message}`));
+
     // Try to log to Strapi, but it might be down so ignore errors
     logAuditToStrapi("EMERGENCY Force Switch to Development Mode", req.user?.email || 'Backup Admin', req.user?.id).catch(() => { });
 
-    // 1. Force Stop Production (ignoring errors if it's already crashed)
-    try { await stopProd(); } catch (e) { writeLog(`Emergency: stopProd error (ignored): ${e.message}`); }
+    // 1. Force Stop BOTH (ignoring errors if they're already crashed)
+    try { await stopProd(); } catch (e) { }
+    try { await stopDev(); } catch (e) { }
 
     // 2. WIPE THE DEV LOG FILE
     const outputFile = path.join(DEV_LOG_DIR, "strapi-output.log");
@@ -610,9 +606,8 @@ app.post("/switch/prod", async (req, res) => {
     // Save Audit event immediately to Strapi
     await logAuditToStrapi("Switch to Production Mode", req.user?.email, req.user?.id);
 
-    await stopDev();
-
-    // 1. WIPE THE LOG FILE (The "Fresh Notebook")
+    // We do NOT stopDev() here. We keep Dev running while we build.
+    // 1. WIPE THE PROD LOG FILE (The "Fresh Notebook")
     const outputFile = path.join(PROD_LOG_DIR, "strapi-output.log");
     if (fs.existsSync(outputFile)) {
       fs.writeFileSync(outputFile, ""); // This makes the file empty
@@ -626,10 +621,13 @@ app.post("/switch/prod", async (req, res) => {
     // BACKGROUND PROCESS
     (async () => {
       try {
-        await updateDbStatus({ progress_message: 'Building Project (This will take a while)...' });
+        await updateDbStatus({ progress_message: 'Building Project (This will take a while, current service is still LIVE)...' });
         await buildProject();
 
-        await updateDbStatus({ progress_message: 'Starting Production Service...' });
+        await updateDbStatus({ progress_message: 'Build complete. Stopping Dev and Starting Production Service...' });
+        
+        // NOW we stop the old service at the last possible second
+        await stopDev();
         await startProd();
 
         // Wait till Strapi is up, then update its settings to disable dev mode

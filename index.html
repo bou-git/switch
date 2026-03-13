@@ -739,7 +739,8 @@
     }
 
     async function initiateEmergencySwitch() {
-        if (state.isProcessing) return;
+        // Removed: if (state.isProcessing) return; 
+        // We allow emergency switch precisely BECAUSE the system is processing (and potentially stuck).
 
         // Immediate feedback and lock
         state.isProcessing = true;
@@ -817,8 +818,8 @@
         } catch(e) {}
         
         // Show emergency button ONLY when status is transitioning (isProcessing is true)
-        // AND current environment in DB is NOT development (user requirement)
-        const showEmergency = state.isProcessing && state.actualEnvironment !== 'development';
+        // AND the target mode is production (user requirement: "moving from dev to production")
+        const showEmergency = state.isProcessing && state.targetMode === 'production';
         ui.cp.btnEmergency.style.display = showEmergency ? 'inline-flex' : 'none';
 
         if (state.mode === 'transitioning' || state.isProcessing) {
