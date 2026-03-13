@@ -331,7 +331,18 @@ async function updateStrapiSettingsWithRetry(payload, maxRetries = 360, retryDel
       writeLog("Successfully updated Strapi settings.");
       return true;
     } catch (err) {
-      writeLog(`Failed to update Strapi settings (${err.message}). Retrying in ${retryDelay / 1000}s...`);
+      const isWaiting = err.response && (err.response.status === 502 || err.response.status === 503 || err.response.status === 504 || err.response.status === 404);
+      const isConnError = !err.response && (err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT');
+
+      if (isWaiting || isConnError) {
+        // Quiet waiting message instead of "ERROR" style
+        if (i % 6 === 0) {
+          writeLog(`Strapi is still booting or unavailable (Status: ${err.response?.status || err.code}). Continuing to wait...`);
+        }
+      } else {
+        writeLog(`Notice: Failed to update Strapi settings (${err.message}). Retrying...`);
+      }
+      
       await delay(retryDelay);
     }
   }
