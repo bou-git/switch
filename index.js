@@ -358,8 +358,10 @@ function run(command, fallbackCommand = null) {
         const cleanedMsg = stripNullBytes(err.message + (stdout || "") + (stderr || ""));
         const searchStr = cleanedMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
         
-        if (searchStr.includes("alreadyrunning") || searchStr.includes("servicealreadyrunning")) {
-          writeLog(`Notice: Process already running for command: ${command}`);
+        if (searchStr.includes("alreadyrunning") || searchStr.includes("servicealreadyrunning") || 
+            searchStr.includes("notrunning") || searchStr.includes("alreadystopped") || 
+            searchStr.includes("isnotrunning")) {
+          writeLog(`Notice: Service state already matches target for command: ${command}`);
 
           if (fallbackCommand) {
             writeLog(`Executing fallback command: ${fallbackCommand}`);
@@ -617,7 +619,9 @@ app.post("/switch/prod", async (req, res) => {
     // Save Audit event immediately to Strapi
     await logAuditToStrapi("Switch to Production Mode", req.user?.email, req.user?.id);
 
-    // We do NOT stopDev() here. We keep Dev running while we build.
+    // STOP DEV IMMEDIATELY (User requirement)
+    await stopDev();
+
     // 1. WIPE THE PROD LOG FILE (The "Fresh Notebook")
     const outputFile = path.join(PROD_LOG_DIR, "strapi-output.log");
     if (fs.existsSync(outputFile)) {
@@ -632,13 +636,10 @@ app.post("/switch/prod", async (req, res) => {
     // BACKGROUND PROCESS
     (async () => {
       try {
-        await updateDbStatus({ progress_message: 'Building Project (This will take a while, current service is still LIVE)...' });
+        await updateDbStatus({ progress_message: 'Building Project (This will take a while)...' });
         await buildProject();
 
-        await updateDbStatus({ progress_message: 'Build complete. Stopping Dev and Starting Production Service...' });
-        
-        // NOW we stop the old service at the last possible second
-        await stopDev();
+        await updateDbStatus({ progress_message: 'Starting Production Service...' });
         await startProd();
 
         // Wait till Strapi is up, then update its settings to disable dev mode
@@ -665,7 +666,6 @@ app.post("/switch/prod", async (req, res) => {
         });
       }
     })();
-
   } catch (err) {
     await updateDbStatus({
       switch_status: 'failed',
