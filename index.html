@@ -382,14 +382,6 @@
                 </svg>
                 Switch to Production (Build + Start)
             </button>
-            
-            <!-- Emergency Fallback Button -->
-            <button class="btn" id="btn-emergency-dev" onclick="initiateEmergencySwitch()" style="background-color: #dc2626; color: white; display: none; margin-top: 0.5rem;">
-                <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
-                </svg>
-                Emergency Force Switch to Dev
-            </button>
         </div>
 
         <div class="logs-section">
@@ -431,7 +423,6 @@
             badge: document.getElementById('status-badge'),
             btnDev: document.getElementById('btn-dev'),
             btnProd: document.getElementById('btn-prod'),
-            btnEmergency: document.getElementById('btn-emergency-dev'),
             terminal: document.getElementById('terminal-logs')
         }
     };
@@ -738,49 +729,6 @@
         }
     }
 
-    async function initiateEmergencySwitch() {
-        // Removed: if (state.isProcessing) return; 
-        // We allow emergency switch precisely BECAUSE the system is processing (and potentially stuck).
-
-        // Immediate feedback and lock
-        state.isProcessing = true;
-        toggleButtons(false);
-
-        if (!confirm('EMERGENCY: This will forcefully stop the backend Server and ignore any tracking locks. Only use this if the system is completely stuck or crashed. Proceed?')) {
-            state.isProcessing = false;
-            toggleButtons(true);
-            return;
-        }
-        
-        stopLogStream();
-
-        streamNativeLog('SYSTEM', 'Initiating EMERGENCY transition to Development mode...', 'error');
-
-        try {
-            const response = await fetch(`${CONFIG.MANAGER_URL}/switch/emergency-dev`, {
-                method: 'POST',
-                headers: { 'Authorization': `Bearer ${state.token}` }
-            });
-
-            if (response.status === 401 || response.status === 403) {
-                return handleLogout("Session expired.");
-            }
-            if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-            
-            streamNativeLog('SYSTEM', 'Emergency signal accepted. Backend overriding processes...', 'success');
-
-            state.mode = 'dev';
-            updateBadgeUI();
-            startLogStream('control');
-            startStatusPolling();
-            
-        } catch (error) {
-            streamNativeLog('SYSTEM', `Emergency switch failed: ${error.message}`, 'error');
-        } finally {
-            state.isProcessing = false;
-            toggleButtons(true);
-        }
-    }
 
     function toggleButtons(enabled) {
         ui.cp.btnDev.disabled = !enabled;
@@ -799,28 +747,10 @@
             // Restore pointer events
             ui.cp.btnDev.style.pointerEvents = 'auto';
             ui.cp.btnProd.style.pointerEvents = 'auto';           
-            ui.cp.btnEmergency.style.pointerEvents = 'auto';
-            ui.cp.btnEmergency.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>Emergency Force Switch to Dev`;
         }
     }
 
     function updateBadgeUI(progressMessage) {
-        // Detect if using Backup Token
-        let isBackupAdmin = false;
-        try {
-            if (state.token) {
-                const payload = JSON.parse(atob(state.token.split('.')[1]));
-                // If the token email matches our emergency email pattern, show the button
-                if (payload.email === 'infraadmin@bou.or.ug' && payload.id === null) {
-                    isBackupAdmin = true;
-                }
-            }
-        } catch(e) {}
-        
-        // Show emergency button ONLY when status is transitioning (isProcessing is true)
-        // AND the target mode is production (user requirement: "moving from dev to production")
-        const showEmergency = state.isProcessing && state.targetMode === 'production';
-        ui.cp.btnEmergency.style.display = showEmergency ? 'inline-flex' : 'none';
 
         if (state.mode === 'transitioning' || state.isProcessing) {
             ui.cp.badge.className = 'badge prod'; // Or a custom transitioning class
