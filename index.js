@@ -200,7 +200,7 @@ async function backupDatabase() {
 
       const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
       const backupFile = path.join(CONFIG.BACKUP_DIR, `bou_backup_${timestamp}.sql`);
-      
+
       writeLog(`Starting Database Backup to: ${backupFile}`);
 
       process.env.PGPASSWORD = CONFIG.DB_PASS;
@@ -248,13 +248,13 @@ app.post("/api/login", async (req, res) => {
       email,
       password,
     });
-    
+
     // Strapi Login Success
     return res.json(loginRes.data);
   } catch (error) {
     // 2. If Strapi fails, check WHY it failed
     const status = error.response ? error.response.status : null;
-    
+
     // If explicit invalid credentials (400, 401), we do NOT fallback to backup unless it matches exactly.
     // Instead of completely failing, let's check the local backup in ALL error cases where Strapi doesn't work.
     // (A 502 Bad Gateway means the proxy is up but Strapi is restarting)
@@ -266,7 +266,7 @@ app.post("/api/login", async (req, res) => {
         CONFIG.JWT_SECRET,
         { expiresIn: "1h" }
       );
-      
+
       return res.json({
         data: {
           token: fallbackToken,
@@ -336,7 +336,7 @@ function run(command, fallbackCommand = null) {
         const cleanMsg = err.message.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
         if (cleanMsg.includes("alreadyrunning") || cleanMsg.includes("servicealreadyrunning")) {
           writeLog(`Notice: Process already running for command: ${command}`);
-          
+
           if (fallbackCommand) {
             writeLog(`Executing fallback command: ${fallbackCommand}`);
             return resolve(run(fallbackCommand)); // Recursively run the fallback
@@ -363,8 +363,8 @@ async function stopProd() {
 async function startProd() {
   writeLog("Starting Production Service...");
   return run(
-      `"${CONFIG.NSSM_PATH}" start StrapiService`,
-      `"${CONFIG.NSSM_PATH}" restart StrapiService` // Fallback if already running
+    `"${CONFIG.NSSM_PATH}" start StrapiService`,
+    `"${CONFIG.NSSM_PATH}" restart StrapiService` // Fallback if already running
   );
 }
 
@@ -376,8 +376,8 @@ async function stopDev() {
 async function startDev() {
   writeLog("Starting Dev Service...");
   return run(
-      `"${CONFIG.NSSM_PATH}" start StrapiDevService`,
-      `"${CONFIG.NSSM_PATH}" restart StrapiDevService` // Fallback if already running
+    `"${CONFIG.NSSM_PATH}" start StrapiDevService`,
+    `"${CONFIG.NSSM_PATH}" restart StrapiDevService` // Fallback if already running
   );
 }
 
@@ -446,7 +446,7 @@ app.post("/switch/emergency-dev", async (req, res) => {
     });
 
     // Try to log to Strapi, but it might be down so ignore errors
-    logAuditToStrapi("EMERGENCY Force Switch to Development Mode", req.user?.email || 'Backup Admin', req.user?.id).catch(() => {});
+    logAuditToStrapi("EMERGENCY Force Switch to Development Mode", req.user?.email || 'Backup Admin', req.user?.id).catch(() => { });
 
     // 1. Force Stop Production (ignoring errors if it's already crashed)
     try { await stopProd(); } catch (e) { writeLog(`Emergency: stopProd error (ignored): ${e.message}`); }
@@ -454,7 +454,7 @@ app.post("/switch/emergency-dev", async (req, res) => {
     // 2. WIPE THE DEV LOG FILE
     const outputFile = path.join(DEV_LOG_DIR, "strapi-output.log");
     if (fs.existsSync(outputFile)) {
-      try { fs.writeFileSync(outputFile, ""); } catch(e) {}
+      try { fs.writeFileSync(outputFile, ""); } catch (e) { }
     }
 
     // 3. Start Development Service
@@ -707,33 +707,51 @@ app.get("/logs/stream/:mode", (req, res) => {
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
+  let lastSize = 0;
+  let hasSentInitial = false;
+
   const sendLogs = () => {
-    let logs = "";
-
     try {
-      if (fs.existsSync(outputFile)) {
-        logs += fs.readFileSync(outputFile, "utf8");
+      if (!fs.existsSync(outputFile)) {
+        if (!hasSentInitial) {
+          res.write(`data: ${JSON.stringify("Waiting for logs...")}\n\n`);
+          hasSentInitial = true;
+        }
+        return;
       }
 
-      if (fs.existsSync(errorFile)) {
-        logs += "\n\n----- ERRORS -----\n\n";
-        logs += fs.readFileSync(errorFile, "utf8");
+      const stats = fs.statSync(outputFile);
+      const currentSize = stats.size;
+
+      if (!hasSentInitial) {
+        // Initial load: send last ~10KB of logs
+        const start = Math.max(0, currentSize - 10000);
+        const fd = fs.openSync(outputFile, 'r');
+        const buffer = Buffer.alloc(currentSize - start);
+        fs.readSync(fd, buffer, 0, buffer.length, start);
+        fs.closeSync(fd);
+
+        lastSize = currentSize;
+        hasSentInitial = true;
+        res.write(`data: ${JSON.stringify(buffer.toString('utf8'))}\n\n`);
+      } else if (currentSize > lastSize) {
+        // Stream only the delta
+        const fd = fs.openSync(outputFile, 'r');
+        const deltaSize = currentSize - lastSize;
+        const buffer = Buffer.alloc(deltaSize);
+        fs.readSync(fd, buffer, 0, deltaSize, lastSize);
+        fs.closeSync(fd);
+
+        lastSize = currentSize;
+        res.write(`data: ${JSON.stringify(buffer.toString('utf8'))}\n\n`);
+      } else if (currentSize < lastSize) {
+        // File was truncated (likely a mode switch cleared the log)
+        lastSize = 0;
+        hasSentInitial = false;
       }
-      if (errorFile && fs.existsSync(errorFile)) {
-        logs += "\n\n----- ERRORS -----\n\n";
-        logs += fs.readFileSync(errorFile, "utf8");
-      }
-
-      if (!logs.trim()) {
-        logs = "No logs yet...";
-      }
-
-      logs = logs.split("\n").slice(-200).join("\n");
-
-      res.write(`data: ${JSON.stringify(logs)}\n\n`);
-
     } catch (err) {
-      res.write(`data: ${JSON.stringify("Log read error: " + err.message)}\n\n`);
+      console.error("Log stream error:", err);
+      // Don't kill the stream for a single read error
     }
   };
 
