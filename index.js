@@ -24,10 +24,7 @@ app.use(express.json());
 const limiter = rateLimit({
   windowMs: 1 * 60 * 1000, // 1 minute
   max: 500, // limit each IP to 50 requests per windowMs
-  message: { error: "Too many requests from this IP, please try again later." },
-  keyGenerator: (req) => {
-    return req.ip ? req.ip.replace(/:\d+[^:]*$/, '') : 'unknown';
-  }
+  message: { error: "Too many requests from this IP, please try again later." }
 });
 app.use(limiter);
 
@@ -142,6 +139,11 @@ async function verifyToken(req, res, next) {
 
 app.use(verifyToken);
 
+function stripNullBytes(str) {
+  if (typeof str !== 'string') return str;
+  return str.replace(/\0/g, '').trim();
+}
+
 function writeLog(message) {
   const time = new Date().toISOString();
   const log = `[${time}] ${message}\n`;
@@ -177,6 +179,11 @@ async function updateDbStatus(updates) {
   try {
     const keys = Object.keys(updates);
     if (keys.length === 0) return;
+
+    // Sanitize all values to remove null bytes that cause DB encoding errors
+    keys.forEach(key => {
+      updates[key] = stripNullBytes(updates[key]);
+    });
 
     // Always append updated_at
     updates.updated_at = new Date().toISOString();
@@ -254,33 +261,36 @@ app.post("/api/login", async (req, res) => {
   } catch (error) {
     // 2. If Strapi fails, check WHY it failed
     const status = error.response ? error.response.status : null;
+    const isStrapiDown = !status || status >= 500;
 
-    // If explicit invalid credentials (400, 401), we do NOT fallback to backup unless it matches exactly.
-    // Instead of completely failing, let's check the local backup in ALL error cases where Strapi doesn't work.
-    // (A 502 Bad Gateway means the proxy is up but Strapi is restarting)
+    if (isStrapiDown) {
+      // If Strapi is down, we allow the backup admin to log in
+      if (email === CONFIG.BACKUP_EMAIL) {
+        if (password === CONFIG.BACKUP_PASSWORD) {
+          writeLog(`Authentication fallback triggered. Backup access granted for ${email}`);
+          const fallbackToken = jwt.sign(
+            { email: CONFIG.BACKUP_EMAIL, isInfraAdmin: true, id: null },
+            CONFIG.JWT_SECRET,
+            { expiresIn: "1h" }
+          );
 
-    if (email === CONFIG.BACKUP_EMAIL && password === CONFIG.BACKUP_PASSWORD) {
-      writeLog(`Authentication fallback triggered. Backup access granted for ${email}`);
-      const fallbackToken = jwt.sign(
-        { email: CONFIG.BACKUP_EMAIL, isInfraAdmin: true, id: null },
-        CONFIG.JWT_SECRET,
-        { expiresIn: "1h" }
-      );
-
-      return res.json({
-        data: {
-          token: fallbackToken,
-          user: { email: CONFIG.BACKUP_EMAIL }
+          return res.json({
+            data: {
+              token: fallbackToken,
+              user: { email: CONFIG.BACKUP_EMAIL }
+            }
+          });
+        } else {
+          // Wrong password for the emergency account while Strapi is down
+          return res.status(401).json({ error: "Invalid email or password." });
         }
-      });
+      }
+      return res.status(503).json({ error: "Service Unavailable: Authentication backend is down." });
     }
 
-    // If backup credentials do not match, we throw the original error back to the client
-    if (status === 401 || status === 400) {
-      return res.status(401).json({ error: "Invalid email or password." });
-    }
-
-    return res.status(503).json({ error: "Service Unavailable: Authentication backend is down." });
+    // If Strapi is UP but returned 400/401, we do NOT fallback to the emergency password.
+    // This satisfies the requirement that emergency password only works when Strapi is down.
+    return res.status(401).json({ error: "Invalid email or password." });
   }
 });
 
@@ -298,6 +308,7 @@ app.get("/status", async (req, res) => {
     res.json({
       currentMode: isProcessing ? "transitioning" : (row.current_environment === 'development' ? 'dev' : 'prod'),
       isProcessing: isProcessing,
+      actualEnvironment: row.current_environment, // NEW: Help the frontend decide if emergency switch is allowed
       targetMode: row.target_environment,
       progressMessage: row.progress_message
     });
@@ -333,8 +344,10 @@ function run(command, fallbackCommand = null) {
     exec(command, (err, stdout, stderr) => {
       if (err) {
         // NSSM often outputs UTF-16 with null bytes, so we aggressively clean it up
-        const cleanMsg = err.message.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-        if (cleanMsg.includes("alreadyrunning") || cleanMsg.includes("servicealreadyrunning")) {
+        const cleanedMsg = stripNullBytes(err.message + (stdout || "") + (stderr || ""));
+        const searchStr = cleanedMsg.toLowerCase().replace(/[^a-z0-9]/g, '');
+        
+        if (searchStr.includes("alreadyrunning") || searchStr.includes("servicealreadyrunning")) {
           writeLog(`Notice: Process already running for command: ${command}`);
 
           if (fallbackCommand) {
@@ -343,8 +356,8 @@ function run(command, fallbackCommand = null) {
           }
           return resolve(stdout || err.message);
         }
-        writeLog("ERROR: " + err.message);
-        return reject(err);
+        writeLog("ERROR: " + cleanedMsg);
+        return reject(new Error(cleanedMsg));
       }
 
       if (stdout) writeLog(stdout);

@@ -38,8 +38,8 @@
         /* Container styles */
         .container {
             width: 100%;
-            max-width: 800px;
-            padding: 2rem;
+            max-width: 1900px;
+            padding: 1rem;
         }
 
         .card {
@@ -147,6 +147,37 @@
         }
         .btn-prod:hover:not(:disabled) { background-color: #059669; }
 
+        /* Password Toggle */
+        .password-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .password-toggle {
+            position: absolute;
+            right: 12px;
+            background: none;
+            border: none;
+            padding: 0;
+            cursor: pointer;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: color 0.2s;
+            z-index: 10;
+        }
+
+        .password-toggle:hover {
+            color: var(--text-main);
+        }
+
+        .password-toggle svg {
+            width: 20px;
+            height: 20px;
+        }
+
         /* Error message */
         .error-message {
             color: var(--error-color);
@@ -222,7 +253,7 @@
             font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
             padding: 1rem;
             border-radius: 8px;
-            height: 500px;
+            height: 400px;
             overflow-y: auto;
             font-size: 0.875rem;
             line-height: 1.5;
@@ -309,7 +340,15 @@
             
             <div class="form-group">
                 <label for="password">Password</label>
-                <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+                <div class="password-wrapper">
+                    <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password">
+                    <button type="button" class="password-toggle" id="toggle-password" tabindex="-1">
+                        <svg id="eye-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                        </svg>
+                    </button>
+                </div>
             </div>
             
             <button type="submit" class="btn" id="login-btn">Secure Login</button>
@@ -373,6 +412,8 @@
         MANAGER_URL: 'https://bouweb-test.bou.or.ug/infra' // Local control manager API mapped via IIS Proxy
     };
 
+    
+
     // --- DOM Elements ---
     const ui = {
         views: {
@@ -397,11 +438,33 @@
 
     // --- State Management ---
     const state = {
-        mode: 'prod', // 'prod' | 'dev'
+        mode: 'prod', // 'prod' | 'dev' | 'transitioning'
+        actualEnvironment: 'production', // 'production' | 'development'
         isProcessing: false,
         logEventSource: null,
         token: null
     };
+
+    // --- Show Password Toggle ---
+    const togglePasswordBtn = document.getElementById('toggle-password');
+    const eyeIcon = document.getElementById('eye-icon');
+    
+    togglePasswordBtn.addEventListener('click', () => {
+        const type = ui.login.pass.getAttribute('type') === 'password' ? 'text' : 'password';
+        ui.login.pass.setAttribute('type', type);
+        
+        // Update Icon
+        if (type === 'text') {
+            eyeIcon.innerHTML = `
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.542-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l18 18"></path>
+            `;
+        } else {
+            eyeIcon.innerHTML = `
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+            `;
+        }
+    });
 
     // --- View Transitions ---
     function navigateTo(view) {
@@ -435,6 +498,7 @@
             if (statusRes.ok) {
                 const serverData = await statusRes.json();
                 state.mode = serverData.currentMode;
+                state.actualEnvironment = serverData.actualEnvironment;
                 state.targetMode = serverData.targetMode;
                 updateBadgeUI(serverData.progressMessage);
 
@@ -479,6 +543,7 @@
                         // Server just finished!
                         state.isProcessing = false;
                         state.mode = serverData.currentMode;
+                        state.actualEnvironment = serverData.actualEnvironment;
                         state.targetMode = null;
                         updateBadgeUI();
                         toggleButtons(true);
@@ -486,6 +551,7 @@
                         streamNativeLog('SYSTEM', 'Background process completed successfully.', 'success');
                     } else if (serverData.isProcessing) {
                         state.mode = serverData.currentMode;
+                        state.actualEnvironment = serverData.actualEnvironment;
                         state.targetMode = serverData.targetMode;
                         updateBadgeUI(serverData.progressMessage);
                     }
@@ -751,11 +817,9 @@
         } catch(e) {}
         
         // Show emergency button ONLY when status is transitioning (isProcessing is true)
-        if (state.mode === 'transitioning') {
-             ui.cp.btnEmergency.style.display = 'inline-flex';
-        } else {
-             ui.cp.btnEmergency.style.display = 'none';
-        }
+        // AND current environment in DB is NOT development (user requirement)
+        const showEmergency = state.isProcessing && state.actualEnvironment !== 'development';
+        ui.cp.btnEmergency.style.display = showEmergency ? 'inline-flex' : 'none';
 
         if (state.mode === 'transitioning' || state.isProcessing) {
             ui.cp.badge.className = 'badge prod'; // Or a custom transitioning class
