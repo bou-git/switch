@@ -305,12 +305,17 @@ app.get("/status", async (req, res) => {
     const row = dbRes.rows[0];
     const isProcessing = row.switch_status !== 'idle';
 
+    const devStatus = await getServiceStatus("StrapiDevService");
+    const prodStatus = await getServiceStatus("StrapiService");
+
     res.json({
       currentMode: isProcessing ? "transitioning" : (row.current_environment === 'development' ? 'dev' : 'prod'),
       isProcessing: isProcessing,
-      actualEnvironment: row.current_environment, // NEW: Help the frontend decide if emergency switch is allowed
+      actualEnvironment: row.current_environment,
       targetMode: row.target_environment,
-      progressMessage: row.progress_message
+      progressMessage: row.progress_message,
+      devStatus,
+      prodStatus
     });
   } catch (err) {
     writeLog(`Status Endpoint WARNING: DB Error (${err.message}). Defaulting to fallback.`);
@@ -348,6 +353,24 @@ async function updateStrapiSettingsWithRetry(payload, maxRetries = 360, retryDel
   }
   writeLog("ERROR: Could not update Strapi settings after maximum retries.");
   return false;
+}
+
+async function getServiceStatus(serviceName) {
+  return new Promise((resolve) => {
+    exec(`"${CONFIG.NSSM_PATH}" status ${serviceName}`, (err, stdout, stderr) => {
+      if (err) {
+        return resolve("UNKNOWN");
+      }
+      const status = stripNullBytes(stdout).trim().toUpperCase();
+      if (status.includes("RUNNING")) return resolve("RUNNING");
+      if (status.includes("STOPPED")) return resolve("STOPPED");
+      if (status.includes("PAUSED")) return resolve("PAUSED");
+      if (status.includes("START_PENDING")) return resolve("STARTING");
+      if (status.includes("STOP_PENDING")) return resolve("STOPPING");
+      
+      resolve(status || "UNKNOWN");
+    });
+  });
 }
 
 function run(command, fallbackCommand = null) {
@@ -645,6 +668,98 @@ app.post("/restart/prod", async (req, res) => {
     await logAuditToStrapi("Restart Production Service", req.user?.email, req.user?.id);
     await run(`"${CONFIG.NSSM_PATH}" restart StrapiService`);
     res.json({ message: "Production restart signal sent" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /start/dev:
+ *   post:
+ *     summary: Start Development Service
+ *     description: Starts the StrapiDevService using NSSM.
+ *     responses:
+ *       200:
+ *         description: Successfully started development service
+ *       500:
+ *         description: Internal server error
+ */
+app.post("/start/dev", async (req, res) => {
+  try {
+    writeLog(`[AUDIT] Starting DEV service - Requested by: ${req.user?.email}`);
+    await logAuditToStrapi("Start Development Service", req.user?.email, req.user?.id);
+    await startDev();
+    res.json({ message: "Development start signal sent" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /stop/dev:
+ *   post:
+ *     summary: Stop Development Service
+ *     description: Stops the StrapiDevService using NSSM.
+ *     responses:
+ *       200:
+ *         description: Successfully stopped development service
+ *       500:
+ *         description: Internal server error
+ */
+app.post("/stop/dev", async (req, res) => {
+  try {
+    writeLog(`[AUDIT] Stopping DEV service - Requested by: ${req.user?.email}`);
+    await logAuditToStrapi("Stop Development Service", req.user?.email, req.user?.id);
+    await stopDev();
+    res.json({ message: "Development stop signal sent" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /start/prod:
+ *   post:
+ *     summary: Start Production Service
+ *     description: Starts the StrapiService using NSSM.
+ *     responses:
+ *       200:
+ *         description: Successfully started production service
+ *       500:
+ *         description: Internal server error
+ */
+app.post("/start/prod", async (req, res) => {
+  try {
+    writeLog(`[AUDIT] Starting PROD service - Requested by: ${req.user?.email}`);
+    await logAuditToStrapi("Start Production Service", req.user?.email, req.user?.id);
+    await startProd();
+    res.json({ message: "Production start signal sent" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /stop/prod:
+ *   post:
+ *     summary: Stop Production Service
+ *     description: Stops the StrapiService using NSSM.
+ *     responses:
+ *       200:
+ *         description: Successfully stopped production service
+ *       500:
+ *         description: Internal server error
+ */
+app.post("/stop/prod", async (req, res) => {
+  try {
+    writeLog(`[AUDIT] Stopping PROD service - Requested by: ${req.user?.email}`);
+    await logAuditToStrapi("Stop Production Service", req.user?.email, req.user?.id);
+    await stopProd();
+    res.json({ message: "Production stop signal sent" });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

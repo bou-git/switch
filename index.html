@@ -159,6 +159,53 @@
         }
         .btn-restart:hover:not(:disabled) { background-color: #2563eb; }
 
+        .btn-stop {
+            background-color: var(--error-color);
+            color: white;
+        }
+        .btn-stop:hover:not(:disabled) { background-color: #dc2626; }
+
+        .btn-start {
+            background-color: var(--success-color);
+            color: white;
+        }
+        .btn-start:hover:not(:disabled) { background-color: #059669; }
+
+        /* Control Groups */
+        .control-group {
+            display: none;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+            margin-top: 0.75rem;
+            padding: 1rem;
+            background-color: #f9fafb;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        .toggle-btn {
+            background: none;
+            border: 1px solid var(--border-color);
+            color: var(--text-muted);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s;
+        }
+        .toggle-btn:hover {
+            background-color: #f3f4f6;
+            color: var(--text-main);
+        }
+        .toggle-btn.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
         /* Password Toggle */
         .password-wrapper {
             position: relative;
@@ -237,6 +284,25 @@
             background-color: rgba(245, 158, 11, 0.1);
             color: var(--dev-color);
             border: 1px solid rgba(245, 158, 11, 0.2);
+        }
+
+        /* Small Status indicator */
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+        }
+        .status-dot.running { background-color: var(--success-color); box-shadow: 0 0 8px var(--success-color); }
+        .status-dot.stopped { background-color: var(--error-color); }
+        .status-dot.unknown { background-color: var(--text-muted); }
+
+        .service-status-text {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            font-weight: 700;
+            margin-left: auto;
         }
 
         /* Actions area */
@@ -382,31 +448,55 @@
         </div>
 
         <div class="actions">
-            <!-- Normal Buttons -->
-            <button class="btn btn-dev" id="btn-dev" onclick="initiateSwitch('dev')">
-                <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
-                </svg>
-                Switch to Development Mode
-            </button>
-            <button class="btn btn-prod" id="btn-prod" onclick="initiateSwitch('prod')">
-                <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
-                </svg>
-                Switch to Production (Build + Start)
-            </button>
-            <button class="btn btn-restart" id="btn-restart-dev" onclick="restartService('dev')">
-                <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                </svg>
-                Restart Development Server
-            </button>
-            <button class="btn btn-restart" id="btn-restart-prod" onclick="restartService('prod')">
-                <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
-                </svg>
-                Restart Production Server
-            </button>
+            <!-- Primary Actions -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <button class="btn btn-dev" id="btn-dev" onclick="initiateSwitch('dev')">
+                    <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                    </svg>
+                    Switch to Development
+                </button>
+                <button class="btn btn-prod" id="btn-prod" onclick="initiateSwitch('prod')">
+                    <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+                    </svg>
+                    Switch to Production
+                </button>
+            </div>
+
+            <!-- Advanced Toggles -->
+            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
+                <button class="toggle-btn" id="toggle-dev-controls" onclick="toggleControls('dev')" style="flex: 1; justify-content: flex-start;">
+                    <svg style="width:14px;height:14px;margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                    Advanced Dev Controls
+                    <span id="status-text-dev" class="service-status-text">
+                        <span id="status-dot-dev" class="status-dot unknown"></span>
+                        <span id="status-label-dev">Unknown</span>
+                    </span>
+                </button>
+                <button class="toggle-btn" id="toggle-prod-controls" onclick="toggleControls('prod')" style="flex: 1; justify-content: flex-start;">
+                    <svg style="width:14px;height:14px;margin-right:6px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4"></path></svg>
+                    Advanced Prod Controls
+                    <span id="status-text-prod" class="service-status-text">
+                        <span id="status-dot-prod" class="status-dot unknown"></span>
+                        <span id="status-label-prod">Unknown</span>
+                    </span>
+                </button>
+            </div>
+
+            <!-- Dev Control Group -->
+            <div class="control-group" id="group-dev">
+                <button class="btn btn-start" id="btn-start-dev" onclick="serviceAction('start', 'dev')">Start Dev</button>
+                <button class="btn btn-stop" id="btn-stop-dev" onclick="serviceAction('stop', 'dev')">Stop Dev</button>
+                <button class="btn btn-restart" id="btn-restart-dev" onclick="serviceAction('restart', 'dev')">Restart Dev</button>
+            </div>
+
+            <!-- Prod Control Group -->
+            <div class="control-group" id="group-prod">
+                <button class="btn btn-start" id="btn-start-prod" onclick="serviceAction('start', 'prod')">Start Prod</button>
+                <button class="btn btn-stop" id="btn-stop-prod" onclick="serviceAction('stop', 'prod')">Stop Prod</button>
+                <button class="btn btn-restart" id="btn-restart-prod" onclick="serviceAction('restart', 'prod')">Restart Prod</button>
+            </div>
         </div>
 
         <div class="logs-section">
@@ -448,8 +538,28 @@
             badge: document.getElementById('status-badge'),
             btnDev: document.getElementById('btn-dev'),
             btnProd: document.getElementById('btn-prod'),
-            btnRestartDev: document.getElementById('btn-restart-dev'),
-            btnRestartProd: document.getElementById('btn-restart-prod'),
+            groups: {
+                dev: document.getElementById('group-dev'),
+                prod: document.getElementById('group-prod')
+            },
+            toggles: {
+                dev: document.getElementById('toggle-dev-controls'),
+                prod: document.getElementById('toggle-prod-controls')
+            },
+            btns: {
+                startDev: document.getElementById('btn-start-dev'),
+                stopDev: document.getElementById('btn-stop-dev'),
+                restartDev: document.getElementById('btn-restart-dev'),
+                startProd: document.getElementById('btn-start-prod'),
+                stopProd: document.getElementById('btn-stop-prod'),
+                restartProd: document.getElementById('btn-restart-prod'),
+            },
+            status: {
+                devDot: document.getElementById('status-dot-dev'),
+                devLabel: document.getElementById('status-label-dev'),
+                prodDot: document.getElementById('status-dot-prod'),
+                prodLabel: document.getElementById('status-label-prod')
+            },
             terminal: document.getElementById('terminal-logs')
         }
     };
@@ -506,6 +616,18 @@
         navigateTo('login');
     }
 
+    function updateServiceStatusUI(mode, status) {
+        const dot = ui.cp.status[`${mode}Dot`];
+        const label = ui.cp.status[`${mode}Label`];
+        
+        label.textContent = status || 'Unknown';
+        
+        dot.className = 'status-dot';
+        if (status === 'RUNNING') dot.classList.add('running');
+        else if (status === 'STOPPED') dot.classList.add('stopped');
+        else dot.classList.add('unknown');
+    }
+
     async function initControlPanel() {
         navigateTo('controlPanel');
         streamNativeLog('SYSTEM', 'Admin user authenticated successfully.', 'success');
@@ -520,6 +642,9 @@
                 state.actualEnvironment = serverData.actualEnvironment;
                 state.targetMode = serverData.targetMode;
                 updateBadgeUI(serverData.progressMessage);
+                
+                updateServiceStatusUI('dev', serverData.devStatus);
+                updateServiceStatusUI('prod', serverData.prodStatus);
 
                 if (serverData.isProcessing) {
                     state.isProcessing = true;
@@ -557,6 +682,10 @@
                          streamNativeLog('SYSTEM', `[DB STATUS] ${serverData.progressMessage}`, 'info');
                          lastProgressMessage = serverData.progressMessage;
                     }
+
+                    // Update Service Status UI
+                    updateServiceStatusUI('dev', serverData.devStatus);
+                    updateServiceStatusUI('prod', serverData.prodStatus);
                     
                     if (!serverData.isProcessing && state.isProcessing) {
                         // Server just finished!
@@ -757,11 +886,26 @@
         }
     }
 
-    async function restartService(mode) {
+    function toggleControls(mode) {
+        const group = ui.cp.groups[mode];
+        const toggle = ui.cp.toggles[mode];
+        
+        if (group.style.display === 'grid') {
+            group.style.display = 'none';
+            toggle.classList.remove('active');
+        } else {
+            group.style.display = 'grid';
+            toggle.classList.add('active');
+        }
+    }
+
+    async function serviceAction(action, mode) {
         if (state.isProcessing) return;
 
         const modeStr = mode === 'prod' ? 'Production' : 'Development';
-        if (!confirm(`Are you sure you want to restart the ${modeStr} server?`)) {
+        const actionStr = action.charAt(0).toUpperCase() + action.slice(1);
+        
+        if (!confirm(`Are you sure you want to ${action} the ${modeStr} server?`)) {
             return;
         }
 
@@ -769,14 +913,12 @@
         toggleButtons(false);
         stopLogStream();
 
-        streamNativeLog('SYSTEM', `Sending restart signal for ${modeStr} server...`, 'warn');
+        streamNativeLog('SYSTEM', `Sending ${action} signal for ${modeStr} server...`, 'warn');
 
         try {
-            const restartUrl = mode === 'prod' 
-                ? `${CONFIG.MANAGER_URL}/restart/prod` 
-                : `${CONFIG.MANAGER_URL}/restart/dev`;
+            const url = `${CONFIG.MANAGER_URL}/${action}/${mode}`;
 
-            const response = await fetch(restartUrl, {
+            const response = await fetch(url, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${state.token}`
@@ -791,16 +933,14 @@
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
 
-            streamNativeLog('SYSTEM', `${modeStr} restart signal accepted. Waiting for server to boot...`, 'success');
+            streamNativeLog('SYSTEM', `${modeStr} ${action} signal accepted.`, 'success');
             
             // Re-connect to control log stream
             startLogStream('control');
-            
-            // Start polling to know when it finishes
             startStatusPolling();
 
         } catch (error) {
-            streamNativeLog('SYSTEM', `Failed to restart server: ${error.message}`, 'error');
+            streamNativeLog('SYSTEM', `Failed to ${action} server: ${error.message}`, 'error');
             state.isProcessing = false;
             toggleButtons(true);
         }
@@ -810,46 +950,33 @@
     function toggleButtons(enabled) {
         ui.cp.btnDev.disabled = !enabled;
         ui.cp.btnProd.disabled = !enabled;
-        ui.cp.btnRestartDev.disabled = !enabled;
-        ui.cp.btnRestartProd.disabled = !enabled;
+        
+        // Toggle all individual action buttons
+        Object.values(ui.cp.btns).forEach(btn => {
+            btn.disabled = !enabled;
+            btn.style.pointerEvents = enabled ? 'auto' : 'none';
+        });
         
         if (!enabled) {
-            // Only show "Processing..." on the button that matches the current target mode
             if (state.targetMode === 'development' || (state.targetMode === null && state.mode === 'dev')) {
                 ui.cp.btnDev.innerHTML = `<span class="pulse">Processing...</span>`;
-                ui.cp.btnRestartDev.innerHTML = `<span class="pulse">Restarting...</span>`;
             } else if (state.targetMode === 'production' || (state.targetMode === null && state.mode === 'prod')) {
                 ui.cp.btnProd.innerHTML = `<span class="pulse">Processing...</span>`;
-                ui.cp.btnRestartProd.innerHTML = `<span class="pulse">Restarting...</span>`;
-            } else {
-                // Fallback for generic processing
-                ui.cp.btnDev.innerHTML = `<span class="pulse">Processing...</span>`;
-                ui.cp.btnProd.innerHTML = `<span class="pulse">Processing...</span>`;
             }
-
             ui.cp.btnDev.style.pointerEvents = 'none';
             ui.cp.btnProd.style.pointerEvents = 'none';
-            ui.cp.btnRestartDev.style.pointerEvents = 'none';
-            ui.cp.btnRestartProd.style.pointerEvents = 'none';
         } else {
             // Restore original HTML
-            ui.cp.btnDev.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>Switch to Development Mode`;
-            ui.cp.btnProd.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>Switch to Production (Build + Start)`;
-            ui.cp.btnRestartDev.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Restart Development Server`;
-            ui.cp.btnRestartProd.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Restart Production Server`;
-            
-            // Restore pointer events
+            ui.cp.btnDev.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>Switch to Development`;
+            ui.cp.btnProd.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>Switch to Production`;
             ui.cp.btnDev.style.pointerEvents = 'auto';
             ui.cp.btnProd.style.pointerEvents = 'auto';           
-            ui.cp.btnRestartDev.style.pointerEvents = 'auto';
-            ui.cp.btnRestartProd.style.pointerEvents = 'auto';
         }
     }
 
     function updateBadgeUI(progressMessage) {
-
         if (state.mode === 'transitioning' || state.isProcessing) {
-            ui.cp.badge.className = 'badge prod'; // Or a custom transitioning class
+            ui.cp.badge.className = 'badge prod'; 
             ui.cp.badge.style.backgroundColor = 'rgba(107, 114, 128, 0.1)';
             ui.cp.badge.style.color = '#6b7280';
             ui.cp.badge.style.border = '1px solid rgba(107, 114, 128, 0.2)';
@@ -857,24 +984,20 @@
             const targetText = state.targetMode === 'production' ? 'PROD' : (state.targetMode === 'development' ? 'DEV' : '');
             ui.cp.badge.textContent = targetText ? `SWITCHING TO ${targetText}...` : `PROCESSING...`;
             
-            // Re-use logic to disable buttons
             toggleButtons(false); 
         } else if (state.mode === 'prod') {
             ui.cp.badge.className = 'badge prod';
-            ui.cp.badge.style = ''; // Reset inline styles
+            ui.cp.badge.style = ''; 
             ui.cp.badge.textContent = 'Mode: Production';
+            // Primary buttons show the opposite mode
             ui.cp.btnDev.style.display = 'inline-flex';
             ui.cp.btnProd.style.display = 'none';
-            ui.cp.btnRestartDev.style.display = 'none';
-            ui.cp.btnRestartProd.style.display = 'inline-flex';
         } else {
             ui.cp.badge.className = 'badge dev';
-            ui.cp.badge.style = ''; // Reset inline styles
+            ui.cp.badge.style = ''; 
             ui.cp.badge.textContent = 'Mode: Development';
             ui.cp.btnDev.style.display = 'none';
             ui.cp.btnProd.style.display = 'inline-flex';
-            ui.cp.btnRestartDev.style.display = 'inline-flex';
-            ui.cp.btnRestartProd.style.display = 'none';
         }
     }
 
