@@ -604,6 +604,52 @@ app.post("/switch/prod", async (req, res) => {
   }
 });
 
+/**
+ * @swagger
+ * /restart/dev:
+ *   post:
+ *     summary: Restart Development Service
+ *     description: Restarts the StrapiDevService using NSSM.
+ *     responses:
+ *       200:
+ *         description: Successfully restarted development service
+ *       500:
+ *         description: Internal server error
+ */
+app.post("/restart/dev", async (req, res) => {
+  try {
+    writeLog(`[AUDIT] Restarting DEV service - Requested by: ${req.user?.email}`);
+    await logAuditToStrapi("Restart Development Service", req.user?.email, req.user?.id);
+    await run(`"${CONFIG.NSSM_PATH}" restart StrapiDevService`);
+    res.json({ message: "Development restart signal sent" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /restart/prod:
+ *   post:
+ *     summary: Restart Production Service
+ *     description: Restarts the StrapiService using NSSM.
+ *     responses:
+ *       200:
+ *         description: Successfully restarted production service
+ *       500:
+ *         description: Internal server error
+ */
+app.post("/restart/prod", async (req, res) => {
+  try {
+    writeLog(`[AUDIT] Restarting PROD service - Requested by: ${req.user?.email}`);
+    await logAuditToStrapi("Restart Production Service", req.user?.email, req.user?.id);
+    await run(`"${CONFIG.NSSM_PATH}" restart StrapiService`);
+    res.json({ message: "Production restart signal sent" });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get("/logs", (req, res) => {
   if (!fs.existsSync(LOG_FILE)) {
     return res.json({ logs: "" });

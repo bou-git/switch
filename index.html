@@ -153,6 +153,12 @@
         }
         .btn-prod:hover:not(:disabled) { background-color: #059669; }
 
+        .btn-restart {
+            background-color: #3b82f6;
+            color: white;
+        }
+        .btn-restart:hover:not(:disabled) { background-color: #2563eb; }
+
         /* Password Toggle */
         .password-wrapper {
             position: relative;
@@ -389,6 +395,18 @@
                 </svg>
                 Switch to Production (Build + Start)
             </button>
+            <button class="btn btn-restart" id="btn-restart-dev" onclick="restartService('dev')">
+                <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Restart Development Server
+            </button>
+            <button class="btn btn-restart" id="btn-restart-prod" onclick="restartService('prod')">
+                <svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                Restart Production Server
+            </button>
         </div>
 
         <div class="logs-section">
@@ -430,6 +448,8 @@
             badge: document.getElementById('status-badge'),
             btnDev: document.getElementById('btn-dev'),
             btnProd: document.getElementById('btn-prod'),
+            btnRestartDev: document.getElementById('btn-restart-dev'),
+            btnRestartProd: document.getElementById('btn-restart-prod'),
             terminal: document.getElementById('terminal-logs')
         }
     };
@@ -737,17 +757,70 @@
         }
     }
 
+    async function restartService(mode) {
+        if (state.isProcessing) return;
+
+        const modeStr = mode === 'prod' ? 'Production' : 'Development';
+        if (!confirm(`Are you sure you want to restart the ${modeStr} server?`)) {
+            return;
+        }
+
+        state.isProcessing = true;
+        toggleButtons(false);
+        stopLogStream();
+
+        streamNativeLog('SYSTEM', `Sending restart signal for ${modeStr} server...`, 'warn');
+
+        try {
+            const restartUrl = mode === 'prod' 
+                ? `${CONFIG.MANAGER_URL}/restart/prod` 
+                : `${CONFIG.MANAGER_URL}/restart/dev`;
+
+            const response = await fetch(restartUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${state.token}`
+                }
+            });
+
+            if (response.status === 401 || response.status === 403) {
+                return handleLogout("Your session has expired or you lack permissions.");
+            }
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            streamNativeLog('SYSTEM', `${modeStr} restart signal accepted. Waiting for server to boot...`, 'success');
+            
+            // Re-connect to control log stream
+            startLogStream('control');
+            
+            // Start polling to know when it finishes
+            startStatusPolling();
+
+        } catch (error) {
+            streamNativeLog('SYSTEM', `Failed to restart server: ${error.message}`, 'error');
+            state.isProcessing = false;
+            toggleButtons(true);
+        }
+    }
+
 
     function toggleButtons(enabled) {
         ui.cp.btnDev.disabled = !enabled;
         ui.cp.btnProd.disabled = !enabled;
+        ui.cp.btnRestartDev.disabled = !enabled;
+        ui.cp.btnRestartProd.disabled = !enabled;
         
         if (!enabled) {
             // Only show "Processing..." on the button that matches the current target mode
             if (state.targetMode === 'development' || (state.targetMode === null && state.mode === 'dev')) {
                 ui.cp.btnDev.innerHTML = `<span class="pulse">Processing...</span>`;
+                ui.cp.btnRestartDev.innerHTML = `<span class="pulse">Restarting...</span>`;
             } else if (state.targetMode === 'production' || (state.targetMode === null && state.mode === 'prod')) {
                 ui.cp.btnProd.innerHTML = `<span class="pulse">Processing...</span>`;
+                ui.cp.btnRestartProd.innerHTML = `<span class="pulse">Restarting...</span>`;
             } else {
                 // Fallback for generic processing
                 ui.cp.btnDev.innerHTML = `<span class="pulse">Processing...</span>`;
@@ -756,13 +829,20 @@
 
             ui.cp.btnDev.style.pointerEvents = 'none';
             ui.cp.btnProd.style.pointerEvents = 'none';
+            ui.cp.btnRestartDev.style.pointerEvents = 'none';
+            ui.cp.btnRestartProd.style.pointerEvents = 'none';
         } else {
             // Restore original HTML
             ui.cp.btnDev.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>Switch to Development Mode`;
             ui.cp.btnProd.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>Switch to Production (Build + Start)`;
+            ui.cp.btnRestartDev.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Restart Development Server`;
+            ui.cp.btnRestartProd.innerHTML = `<svg style="width:18px;height:18px;margin-right:8px;" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>Restart Production Server`;
+            
             // Restore pointer events
             ui.cp.btnDev.style.pointerEvents = 'auto';
             ui.cp.btnProd.style.pointerEvents = 'auto';           
+            ui.cp.btnRestartDev.style.pointerEvents = 'auto';
+            ui.cp.btnRestartProd.style.pointerEvents = 'auto';
         }
     }
 
@@ -785,12 +865,16 @@
             ui.cp.badge.textContent = 'Mode: Production';
             ui.cp.btnDev.style.display = 'inline-flex';
             ui.cp.btnProd.style.display = 'none';
+            ui.cp.btnRestartDev.style.display = 'none';
+            ui.cp.btnRestartProd.style.display = 'inline-flex';
         } else {
             ui.cp.badge.className = 'badge dev';
             ui.cp.badge.style = ''; // Reset inline styles
             ui.cp.badge.textContent = 'Mode: Development';
             ui.cp.btnDev.style.display = 'none';
             ui.cp.btnProd.style.display = 'inline-flex';
+            ui.cp.btnRestartDev.style.display = 'inline-flex';
+            ui.cp.btnRestartProd.style.display = 'none';
         }
     }
 
